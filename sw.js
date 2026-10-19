@@ -1,7 +1,7 @@
 /* DYP service worker: cached shell works offline after first successful visit. */
-const CACHE = 'dyp-shell-v1.0.1';
+const CACHE = 'dyp-shell-v1.2.0';
 const SHELL = [
-  './', './index.html', './styles.css?v=1.0.1', './app.js', './manifest.webmanifest',
+  './', './index.html', './styles.css?v=1.2.0', './app.js?v=1.2.0', './manifest.webmanifest',
   './icons/favicon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'
 ];
 self.addEventListener('install', event => {

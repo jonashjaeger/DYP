@@ -118,3 +118,12 @@ input::placeholder,textarea::placeholder{color:#a0b1af}
 @media(min-width:720px){.topbar{padding:25px 42px;height:104px}.screen{padding:15px 42px 35px}.page-intro{padding-top:27px}.home-intro{padding-bottom:32px}.summary-card{padding:33px 37px}.summary-grid{padding-top:42px}.action-card{min-height:125px;flex-direction:row;align-items:center;padding:22px}.action-copy strong{font-size:18px}.action-glyph{width:50px;height:50px;border-radius:15px}.action-glyph svg{width:28px;height:28px}.section-heading{margin-top:44px}.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.form-card{padding:25px 28px}.form-actions{max-width:440px;margin-left:auto;margin-right:auto}}
 @media(max-width:365px){.screen{padding-left:16px;padding-right:16px}.topbar{padding-left:17px;padding-right:17px}.summary-card{padding-left:17px;padding-right:17px}.summary-grid strong{font-size:24px}.summary-grid span{font-size:10px}.action-card{padding-left:12px;padding-right:12px}.two-col{gap:8px}.form-card{padding:18px 14px}.field{font-size:12px}.filter-select select{max-width:105px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* v1.1 — source badges and transparent conditions-fetch state */
+.source-hint{display:block;margin-top:3px;color:#738c87;font-size:11px;line-height:1.48;font-weight:500}
+.lookup-feedback{margin:11px 0 1px;padding:11px 12px;border:1px solid #d8e8e1;border-radius:11px;background:#f1f8f5;color:#4e7670;font-size:11px;line-height:1.5}
+.lookup-feedback[data-status="error"]{background:#fff7ef;border-color:#ead7c3;color:#91653e}
+.lookup-feedback[data-status="loading"]{background:#f1f7fa;border-color:#d5e6ec;color:#326575}
+.secondary-inline{background:#f8faf8;color:#526f6c;border-color:#dce7e2}
+.inline-action:disabled{opacity:.6;cursor:wait}
+.field .source-hint{font-weight:500}
