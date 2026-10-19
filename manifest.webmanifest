@@ -1,0 +1,15 @@
+{
+  "id": "./",
+  "name": "DYP — Winter Bathing Journal",
+  "short_name": "DYP",
+  "description": "An offline-first winter bathing diary for your iPhone.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F5F7F5",
+  "theme_color": "#102C3D",
+  "icons": [
+    {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
+}

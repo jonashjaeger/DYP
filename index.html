@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#102C3D">
+  <meta name="description" content="DYP — your private, offline-first winter bathing journal.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="DYP">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="color-scheme" content="light">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="./styles.css">
+  <title>DYP — Winter bathing journal</title>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <button id="brand-btn" class="brand" aria-label="Go to home" type="button">
+        <span class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 40 40" fill="none"><path d="M5 17c5-5 10-5 15 0s10 5 15 0M5 26c5-5 10-5 15 0s10 5 15 0" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>
+        </span>
+        <span class="brand-copy"><strong>DYP<span class="brand-dot">.</span></strong><small>WINTER BATHING JOURNAL</small></span>
+      </button>
+      <button id="settings-btn" class="icon-button" aria-label="Settings and backups" title="Settings and backups" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5a2.2 2.2 0 0 1 2.1 1.5l.25.74c.5.17 1 .37 1.45.63l.7-.33a2.2 2.2 0 0 1 2.55.43l.5.5a2.2 2.2 0 0 1 .43 2.55l-.33.7c.26.46.46.95.63 1.45l.74.25A2.2 2.2 0 0 1 22.5 14v.7a2.2 2.2 0 0 1-1.5 2.1l-.74.25c-.17.5-.37 1-.63 1.45l.33.7a2.2 2.2 0 0 1-.43 2.55l-.5.5a2.2 2.2 0 0 1-2.55.43l-.7-.33c-.46.26-.95.46-1.45.63l-.25.74A2.2 2.2 0 0 1 12 24.5h-.7a2.2 2.2 0 0 1-2.1-1.5l-.25-.74c-.5-.17-1-.37-1.45-.63l-.7.33a2.2 2.2 0 0 1-2.55-.43l-.5-.5a2.2 2.2 0 0 1-.43-2.55l.33-.7c-.26-.46-.46-.95-.63-1.45l-.74-.25A2.2 2.2 0 0 1 .5 14v-.7a2.2 2.2 0 0 1 1.5-2.1l.74-.25c.17-.5.37-1 .63-1.45l-.33-.7a2.2 2.2 0 0 1 .43-2.55l.5-.5a2.2 2.2 0 0 1 2.55-.43l.7.33c.46-.26.95-.46 1.45-.63l.25-.74A2.2 2.2 0 0 1 11.3 3.5H12Z" transform="translate(0 -2) scale(.94)"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </header>
+
+    <main id="main">
+      <section class="screen" id="screen-home" aria-labelledby="home-title">
+        <div class="page-intro home-intro">
+          <p class="eyebrow" id="season-label">YOUR SEASON</p>
+          <h1 id="home-title">Your season,<br><em>dip by dip.</em></h1>
+          <p class="intro-copy">A little record of every time you took the plunge.</p>
+        </div>
+
+        <div class="summary-card">
+          <div class="summary-glow" aria-hidden="true"></div>
+          <div class="summary-head"><span class="uppercase">SEASON AT A GLANCE</span><svg class="summary-wave" viewBox="0 0 100 28" fill="none" aria-hidden="true"><path d="M0 14C12 0 25 0 37 14s25 14 38 0 17-14 25-7" stroke="currentColor" stroke-width="2"/></svg></div>
+          <div class="summary-grid">
+            <div><strong id="home-dips">0</strong><span>dips logged</span></div>
+            <div><strong id="home-average">—</strong><span>avg. water °C</span></div>
+            <div><strong id="home-total">0m</strong><span>time in water</span></div>
+          </div>
+        </div>
+
+        <div id="draft-banner" class="draft-banner" hidden>
+          <div><strong>Unfinished dip log</strong><span>Your previous entry is saved as a draft.</span></div>
+          <button id="resume-draft-btn" class="text-link" type="button">Continue →</button>
+        </div>
+
+        <div class="action-stack">
+          <button class="action-card primary-action" id="start-dip-btn" type="button">
+            <span class="action-glyph"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6M12 3v2"/></svg></span>
+            <span class="action-copy"><strong>Start a dip</strong><small>Time a new winter bath</small></span>
+            <span class="round-arrow" aria-hidden="true">↗</span>
+          </button>
+          <button class="action-card secondary-action" id="manual-log-btn" type="button">
+            <span class="action-glyph"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+            <span class="action-copy"><strong>Log a past dip</strong><small>Add a session manually</small></span>
+            <span class="round-arrow" aria-hidden="true">↗</span>
+          </button>
+        </div>
+
+        <div class="section-heading"><div><p class="eyebrow">YOUR JOURNAL</p><h2>Recent dips</h2></div><button id="see-all-btn" class="text-link" type="button">See all <span aria-hidden="true">→</span></button></div>
+        <div id="recent-list" class="recent-list"></div>
+      </section>
+
+      <section class="screen" id="screen-timer" hidden aria-labelledby="timer-title">
+        <div class="page-intro compact-intro"><p class="eyebrow">IN THE WATER</p><h1 id="timer-title">Take your <em>time.</em></h1><p class="intro-copy">A simple timer for your dip. You decide when to finish.</p></div>
+        <div class="timer-panel">
+          <div class="timer-ring">
+            <p class="uppercase">IMMERSION TIME</p>
+            <div id="stopwatch-display" class="timer-display" role="timer" aria-live="off">00:00<span>.0</span></div>
+            <p id="timer-status" class="timer-status">Ready when you are</p>
+          </div>
+          <div class="timer-controls">
+            <button id="timer-start" type="button" class="pill-button white-button">Start timer</button>
+            <button id="timer-pause" type="button" class="pill-button outline-light" hidden>Pause</button>
+            <button id="timer-resume" type="button" class="pill-button white-button" hidden>Resume</button>
+            <button id="timer-finish" type="button" class="pill-button soft-button" hidden>Finish &amp; log</button>
+            <button id="timer-reset" type="button" class="quiet-light" hidden>Discard timer</button>
+          </div>
+        </div>
+        <div class="info-note"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><p>The timer uses elapsed clock time, so it catches up after your screen locks. It does not stop automatically when you leave the water.</p></div>
+        <div class="safety-note"><strong>Cold-water safety</strong><p>Never bathe alone. Exit the water if you feel unwell, and never treat a longer time as a goal.</p></div>
+      </section>
+
+      <section class="screen" id="screen-log" hidden aria-labelledby="log-title">
+        <div class="page-intro compact-intro"><p class="eyebrow">SESSION JOURNAL</p><h1 id="log-title">Log your <em>dip.</em></h1><p class="intro-copy">Everything is saved privately on this device.</p></div>
+        <form id="session-form" novalidate>
+          <div class="form-card">
+            <div class="form-card-heading"><span class="step-number">01</span><h2>The dip</h2></div>
+            <label class="field"><span>Date &amp; time <b>*</b></span><input id="field-datetime" name="datetime" type="datetime-local" required></label>
+            <div class="field"><span class="field-label">Duration <b>*</b></span><div class="two-col time-columns"><label><span>Minutes</span><input id="field-minutes" type="number" min="0" max="1440" step="1" inputmode="numeric" required value="0"></label><label><span>Seconds</span><input id="field-seconds" type="number" min="0" max="59" step="1" inputmode="numeric" required value="0"></label></div></div>
+            <label class="field"><span>Water temperature <small>°C</small></span><div class="input-with-unit"><input id="field-water" type="number" min="-5" max="45" step="0.1" inputmode="decimal" placeholder="e.g. 6.5"><span>°C</span></div></label>
+          </div>
+          <div class="form-card">
+            <div class="form-card-heading"><span class="step-number">02</span><h2>Where</h2></div>
+            <label class="field"><span>Bathing spot</span><input id="field-place" type="text" maxlength="120" placeholder="e.g. Islands Brygge"></label>
+            <div class="location-row"><button id="get-location-btn" class="inline-action" type="button"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 22 6.5-11.5L22 2l-8.5 3.5L2 12l9 1z"/></svg> Use GPS location</button><button id="clear-location-btn" class="tiny-link" type="button" hidden>Clear GPS</button></div>
+            <p class="field-hint" id="location-feedback" role="status">Optional — coordinates are only saved if you tap Use GPS location.</p>
+          </div>
+          <div class="form-card">
+            <div class="form-card-heading"><span class="step-number">03</span><h2>Conditions</h2></div>
+            <div class="two-col"><label class="field"><span>Air temperature <small>°C</small></span><div class="input-with-unit"><input id="field-air" type="number" min="-50" max="55" step="0.1" inputmode="decimal" placeholder="e.g. 3"><span>°C</span></div></label><label class="field"><span>Wind speed <small>m/s</small></span><div class="input-with-unit"><input id="field-wind" type="number" min="0" max="80" step="0.1" inputmode="decimal" placeholder="e.g. 4"><span>m/s</span></div></label></div>
+            <div class="two-col"><label class="field"><span>Wind direction</span><select id="field-direction"><option value="">Not recorded</option><option value="N">N</option><option value="NE">NE</option><option value="E">E</option><option value="SE">SE</option><option value="S">S</option><option value="SW">SW</option><option value="W">W</option><option value="NW">NW</option></select></label><label class="field"><span>Weather</span><select id="field-weather"><option value="">Not recorded</option><option value="clear">Clear</option><option value="partly-cloudy">Partly cloudy</option><option value="cloudy">Cloudy</option><option value="rain">Rain</option><option value="snow">Snow</option><option value="fog">Fog</option><option value="other">Other</option></select></label></div>
+            <p class="field-hint">For the offline MVP, weather conditions are entered manually.</p>
+          </div>
+          <div class="form-card">
+            <div class="form-card-heading"><span class="step-number">04</span><h2>Notes</h2></div>
+            <label class="field"><span>Anything worth remembering?</span><textarea id="field-notes" maxlength="2000" rows="4" placeholder="The sea was calm, sunrise, good company…"></textarea></label>
+          </div>
+          <p id="form-error" class="form-error" role="alert" hidden></p>
+          <div class="form-actions"><button id="save-session-btn" class="pill-button dark-button" type="submit">Save dip <span aria-hidden="true">→</span></button><button id="cancel-log-btn" class="quiet-button" type="button">Cancel</button></div>
+        </form>
+      </section>
+
+      <section class="screen" id="screen-history" hidden aria-labelledby="history-title">
+        <div class="page-intro compact-intro"><p class="eyebrow">YOUR RECORDS</p><h1 id="history-title">Every <em>dip.</em></h1><p class="intro-copy" id="history-count">All of your winter bathing sessions.</p></div>
+        <div class="history-toolbar"><label class="search-box"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="history-search" type="search" placeholder="Search places or notes" aria-label="Search your dips"></label><label class="filter-select"><span class="sr-only">Filter sessions</span><select id="history-filter"><option value="all">All time</option><option value="season">This season</option></select></label></div>
+        <div id="history-list" class="history-list"></div>
+        <button id="history-new-btn" class="pill-button dark-button history-add" type="button">+ Log a dip</button>
+      </section>
+
+      <section class="screen" id="screen-insights" hidden aria-labelledby="insights-title">
+        <div class="page-intro compact-intro"><p class="eyebrow" id="insights-season-label">YOUR SEASON</p><h1 id="insights-title">The bigger <em>picture.</em></h1><p class="intro-copy">Patterns from the dips you've recorded, without goals or rankings.</p></div>
+        <div class="metric-grid">
+          <div class="metric"><span>Total dips</span><strong id="metric-dips">0</strong><small>This season</small></div>
+          <div class="metric"><span>Total immersion</span><strong id="metric-duration">0m</strong><small>This season</small></div>
+          <div class="metric"><span>Average duration</span><strong id="metric-average-duration">—</strong><small>Minutes &amp; seconds</small></div>
+          <div class="metric"><span>Coldest water</span><strong id="metric-coldest">—</strong><small>°C, when recorded</small></div>
+          <div class="metric"><span>Average water</span><strong id="metric-average-water">—</strong><small>°C, when recorded</small></div>
+          <div class="metric"><span>Bathing spots</span><strong id="metric-places">0</strong><small>Named locations</small></div>
+        </div>
+        <div class="chart-card"><div class="chart-heading"><h2>Dips by month</h2><span id="monthly-chart-subtitle">This season</span></div><div id="monthly-chart" class="monthly-chart"></div></div>
+        <div class="chart-card"><div class="chart-heading"><h2>Water temperature</h2><span>Recent measured dips</span></div><div id="water-chart" class="water-chart"></div></div>
+        <p class="fine-print">Missing measurements are excluded from temperature statistics. These are descriptive trends, not measures of cold tolerance or health.</p>
+      </section>
+
+      <section class="screen" id="screen-settings" hidden aria-labelledby="settings-title">
+        <div class="page-intro compact-intro"><p class="eyebrow">YOUR DATA</p><h1 id="settings-title">Keep it <em>yours.</em></h1><p class="intro-copy">DYP works offline and does not send your journal to a server.</p></div>
+        <div class="setting-card"><h2>Export &amp; back up</h2><p>Save a copy of your journal. CSV works in spreadsheets and R/Python. JSON preserves the full data model and can be restored here.</p><div class="setting-actions"><button class="pill-button dark-button" id="export-csv" type="button">Export CSV ↓</button><button class="pill-button light-button" id="export-json" type="button">Back up JSON ↓</button></div></div>
+        <div class="setting-card"><h2>Restore a backup</h2><p>Import a DYP JSON backup. Sessions are merged by ID, not duplicated. Existing matching entries are left unchanged.</p><label class="pill-button light-button upload-button" for="import-json">Import JSON ↑</label><input id="import-json" class="file-input" type="file" accept=".json,application/json"></div>
+        <div class="setting-card"><h2>Privacy &amp; offline use</h2><p>Sessions are stored in your browser's on-device IndexedDB. GPS is optional and requested only when you tap the location button. Data may be lost if you clear website data or remove the app: keep regular JSON backups.</p><p id="storage-status" class="storage-status" role="status">Checking local storage…</p></div>
+        <div class="setting-card"><h2>Install DYP</h2><p>On iPhone, open your hosted DYP website in <strong>Safari</strong>, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. Open the icon once while online so the offline cache is prepared.</p><p class="small-muted">The app must be hosted over HTTPS for offline support and GPS (GitHub Pages is suitable).</p></div>
+        <div class="setting-card danger-zone"><h2>Delete all sessions</h2><p>Irreversibly erase the journal stored on this device. Export a backup first.</p><button id="delete-all-btn" class="outline-danger" type="button">Delete all local data</button></div>
+        <p class="app-version">DYP · Version 1.0 · Built for the sea, not the feed.</p>
+      </section>
+    </main>
+    <nav class="bottom-nav" aria-label="Main navigation">
+      <button type="button" class="nav-item is-active" data-view="home" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10Z"/></svg><span>Home</span></button>
+      <button type="button" class="nav-item" data-view="timer"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6M12 3v2"/></svg><span>Timer</span></button>
+      <button type="button" class="nav-item" data-view="history"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="17" rx="2"/><path d="M8 2v4M16 2v4M4 9h16M8 13h3M8 17h3"/></svg><span>History</span></button>
+      <button type="button" class="nav-item" data-view="insights"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V12M10 20V5M16 20v-9M22 20V3"/></svg><span>Insights</span></button>
+    </nav>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
