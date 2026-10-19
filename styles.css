@@ -84,11 +84,31 @@ h1 em{color:#4d948b;font-family:Georgia,serif;font-weight:400;letter-spacing:-.0
 .field{display:flex;flex-direction:column;gap:8px;margin:0 0 17px;font-size:13px;font-weight:700;color:var(--ink)}.field:last-child{margin-bottom:0}
 .field>span:first-child,.field-label{font-weight:700}.field b{color:#4c9d90}
 .field small{font-size:11px;color:var(--muted);font-weight:500}
-/* iOS Safari gives datetime-local a large intrinsic control width.
-   Keep its flex/grid ancestors shrinkable and clip the native control to the card. */
+/* iOS Safari may draw a native datetime-local control beyond its CSS box.
+   Draw our own full-width field border/text; retain the native date/time picker
+   as a transparent, accessible, full-surface interactive input. */
 #session-form,.form-card,.field{min-width:0;max-width:100%}
-.datetime-field{width:100%;overflow:hidden}
-#field-datetime{display:block;width:100%;min-width:0;max-width:100%;overflow:hidden}
+.datetime-field{width:100%;min-width:0}
+.datetime-picker-shell{
+  position:relative;display:flex;align-items:center;justify-content:center;
+  box-sizing:border-box;min-width:0;width:100%;max-width:100%;min-height:48px;
+  border:1px solid #dae4e1;background:#fafcfb;border-radius:12px;
+  overflow:hidden;isolation:isolate;
+}
+.datetime-picker-shell:focus-within{border-color:#4baba0;box-shadow:0 0 0 3px rgba(75,171,160,.12)}
+.datetime-picker-display{
+  display:block;min-width:0;width:100%;padding:12px 39px;
+  font-weight:650;font-size:16px;line-height:1.45;text-align:center;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;
+}
+.datetime-picker-icon{position:absolute;right:13px;top:50%;transform:translateY(-50%);width:18px;height:18px;stroke:#829c99;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+#field-datetime{
+  position:absolute;z-index:1;inset:0;display:block;
+  box-sizing:border-box;width:100%;max-width:100%;height:100%;min-height:0;
+  padding:0;margin:0;border:0;border-radius:0;
+  opacity:0;cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+#field-datetime:focus{box-shadow:none;outline:none}
 input,select,textarea{border:1px solid #dae4e1;background:#fafcfb;color:var(--ink);border-radius:12px;padding:12px 13px;width:100%;min-height:48px;outline:none;min-width:0;font-size:16px}
 input:focus,select:focus,textarea:focus{border-color:#4baba0;box-shadow:0 0 0 3px rgba(75,171,160,.12)}
 textarea{resize:vertical;min-height:108px}
@@ -127,3 +147,12 @@ input::placeholder,textarea::placeholder{color:#a0b1af}
 .secondary-inline{background:#f8faf8;color:#526f6c;border-color:#dce7e2}
 .inline-action:disabled{opacity:.6;cursor:wait}
 .field .source-hint{font-weight:500}
+
+/* v1.4: responsive DMI station picker, independent of the main form */
+.station-picker{margin-top:14px;padding:14px;border:1px solid #d6e6df;border-radius:14px;background:#f7fbf9;min-width:0}
+.station-picker .field{margin:8px 0 3px}
+.station-picker .field span{font-size:12px;font-weight:650}
+.station-picker select{display:block;width:100%;min-width:0;max-width:100%;font-size:16px;text-overflow:ellipsis}
+.station-area-status{color:#2c746b;font-size:12px;font-weight:730;margin:0 0 11px}
+.station-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0 2px}
+.station-actions .inline-action{font-size:12px}

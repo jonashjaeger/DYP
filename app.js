@@ -1,4 +1,4 @@
-/* DYP v1.3 — coastal-proximity water-station screening with marine fallback. */
+/* DYP v1.4 — coastal-aware DMI water station picker and saved spot preferences. */
 'use strict';
 
 const DB_NAME = 'dyp-winter-bathing';
@@ -6,9 +6,10 @@ const DB_VERSION = 1;
 const SESSION_STORE = 'sessions';
 const TIMER_KEY = 'dyp.timer.v1';
 const DRAFT_KEY = 'dyp.draft.v1';
-// Conservative radius for coastal water observations, not an assertion that two sites share a water body.
-const MAX_LOCAL_WATER_STATION_KM = 8;
-const WATER_SOURCE_MODES = ['local-first', 'marine-first'];
+// Broad search radius is for listing candidate observations, NOT automatic acceptance.
+const WATER_STATION_SEARCH_KM = 110;
+const WATER_SOURCE_MODES = ['coastal-first', 'marine-first', 'station-first'];
+const WATER_STATION_PREF_KEY = 'dyp.water-station-prefs.v1';
 const WEATHER_VALUES = ['', 'clear', 'partly-cloudy', 'cloudy', 'rain', 'snow', 'fog', 'other'];
 const DIRECTION_VALUES = ['', 'N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const $ = id => document.getElementById(id);
@@ -19,6 +20,8 @@ let editingId = null;
 let draftGPS = null;
 let draftMeasurements = {};
 let conditionRequestSerial = 0;
+let waterStationCandidates = [];
+let candidateLookupStatus = '';
 let activeSource = 'manual';
 let toastTimeout;
 
@@ -41,6 +44,21 @@ function formatLocalInput(isoOrDate) {
   if (Number.isNaN(d.getTime())) return '';
   const pad = v => String(v).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+// The actual datetime-local input opens the native iOS picker but is visually
+// transparent. Mirror its value in the custom field to avoid iOS sizing bugs.
+function syncDatetimeDisplay() {
+  const input=$('field-datetime');
+  const display=$('field-datetime-display');
+  if(!input||!display)return;
+  const date=input.value?new Date(input.value):null;
+  if(!date||!Number.isFinite(date.getTime())){
+    display.textContent='Choose date & time';
+    return;
+  }
+  display.textContent=new Intl.DateTimeFormat(navigator.language||'en-GB',{
+    day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false
+  }).format(date);
 }
 function formatDay(d) { return new Intl.DateTimeFormat('en-GB', {day:'numeric',month:'short',year:'numeric'}).format(new Date(d)); }
 function formatTime(d) { return new Intl.DateTimeFormat('en-GB', {hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(d)); }
@@ -231,18 +249,126 @@ function renderWaterChart(rows){
   target.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Water temperature for ${points.length} most recent recorded dips"><rect width="${W}" height="${H}" rx="10" fill="#fff"/>${ticks}${points.length>1?`<polyline points="${coords.join(' ')}" fill="none" stroke="#2e827a" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>`:''}${circles}<text x="${left}" y="${H-6}" font-size="13" fill="#839b94">${escapeHTML(new Intl.DateTimeFormat('en-GB',{month:'short',day:'numeric'}).format(new Date(points[0].startedAt)))}</text><text x="${W-right}" y="${H-6}" text-anchor="end" font-size="13" fill="#839b94">${escapeHTML(new Intl.DateTimeFormat('en-GB',{month:'short',day:'numeric'}).format(new Date(points[points.length-1].startedAt)))}</text></svg>`;
 }
 
+// Station preferences are local-only. Named places are stable across GPS noise; unnamed places use ~1 km rounded cells.
+function bathingSpotKey(coord=draftGPS, name=$('field-place')?.value||''){
+  const normalized=String(name||'').normalize('NFKC').toLocaleLowerCase().trim().replace(/\s+/g,' ').slice(0,100);
+  if(normalized)return `place:${normalized}`;
+  if(coord&&Number.isFinite(coord.latitude)&&Number.isFinite(coord.longitude))return `gps:${coord.latitude.toFixed(2)}:${coord.longitude.toFixed(2)}`;
+  return '';
+}
+function loadStationPreferences(){
+  const parsed=safeJSON(localStorage.getItem(WATER_STATION_PREF_KEY));
+  return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
+}
+function preferredStationId(coord=draftGPS, name=$('field-place')?.value||''){
+  const id=loadStationPreferences()[bathingSpotKey(coord,name)]?.stationId;
+  return typeof id==='string'?id:'';
+}
+function setPreferredStation(station){
+  const key=bathingSpotKey();
+  if(!key||!station?.stationId)return false;
+  const data=loadStationPreferences();
+  data[key]={stationId:station.stationId,stationName:station.stationName,updatedAt:new Date().toISOString()};
+  localStorage.setItem(WATER_STATION_PREF_KEY,JSON.stringify(data));
+  return true;
+}
+function forgetPreferredStation(){
+  const key=bathingSpotKey(),data=loadStationPreferences();
+  if(!key||!data[key])return false;
+  delete data[key];localStorage.setItem(WATER_STATION_PREF_KEY,JSON.stringify(data));return true;
+}
+// Intentionally limited pilot coastal mapping. We do not infer coastline connectivity from distance.
+// Exact area mappings can be expanded only when checked against coastal geography.
+const COASTAL_AREAS=[{
+  id:'sejero-bugt-ordrup',label:'Sejerø Bugt · Ordrup Strand',center:[55.8311,11.3950],radiusKm:4,
+  // Potentially representative stations, if and ONLY if they actually report DMI parameter tw.
+  stationIds:['29002'],stationNamePatterns:[/sj[æa]llands?\s*odde/i,/havnebyen/i,/sejer[øo]/i]
+}];
+function coastalAreaFor(coord){
+  if(!coord)return null;
+  return COASTAL_AREAS.find(area=>haversineKm(coord.latitude,coord.longitude,...area.center)<=area.radiusKm)||null;
+}
+function waterStationCoastalMatch(station,area){
+  if(!area||!station)return false;
+  return area.stationIds.includes(station.stationId)||area.stationNamePatterns.some(p=>p.test(station.stationName));
+}
+function rankWaterStations(candidates,coord,preferenceId=''){
+  const area=coastalAreaFor(coord);
+  return [...candidates].map(c=>({...c,coastalMatch:waterStationCoastalMatch(c,area),areaLabel:area?.label||''}))
+    .sort((a,b)=>(b.stationId===preferenceId?1:0)-(a.stationId===preferenceId?1:0) ||
+      Number(b.coastalMatch)-Number(a.coastalMatch) || a.distance-b.distance || a.lag-b.lag);
+}
+function chooseWaterStation(candidates,coord,mode,preferenceId=''){
+  const ranked=rankWaterStations(candidates,coord,preferenceId),area=coastalAreaFor(coord);
+  if(mode==='marine-first')return {candidate:null,reason:'Marine model selected',rule:'marine-only',area};
+  const picked=ranked.find(c=>c.stationId===preferenceId);
+  if(picked)return {candidate:picked,reason:`Saved station for this bathing spot: ${picked.stationName}. Check that its water is representative.`,rule:'saved-station',area};
+  if(mode==='station-first')return {candidate:null,reason:preferenceId?`Saved station ${preferenceId} has no recent DMI water-temperature reading; using marine estimate.`:'Choose a reporting station below to use DMI water temperature.',rule:'saved-station-unavailable',area};
+  const matched=ranked.find(c=>c.coastalMatch);
+  if(matched)return {candidate:matched,reason:`Provisional ${area.label} coastal match: ${matched.stationName}; not a verified bathing-water measurement.`,rule:'coastal-candidate',area};
+  return {candidate:null,reason:area?`No reporting DMI water-temperature station matched ${area.label}; using marine estimate.`:'This coast has no curated station-to-bay mapping yet; using marine estimate. You can select a reporting DMI station below.',rule:'no-curated-match',area};
+}
+function waterReading(candidate,decision,retrievedAt){
+  if(!candidate)return null;
+  return {value:candidate.value,meta:{origin:'dmi',provider:'DMI Open Data',stationId:candidate.stationId,
+    stationName:candidate.stationName,stationDistanceKm:Math.round(candidate.distance*10)/10,
+    observedAt:candidate.time,retrievedAt,selectionRule:decision.rule,
+    coastalArea:decision.area?.label||'',coastalMatch:Boolean(candidate.coastalMatch),
+    waterSelectionNote:decision.reason}};
+}
+function renderStationCandidates(){
+  const group=$('station-picker'),select=$('field-water-station'),status=$('station-picker-status');
+  const pref=preferredStationId(),area=coastalAreaFor(draftGPS);
+  $('coastal-area-status').textContent=area?`Coastal area: ${area.label} (pilot mapping, not a bath-temperature guarantee)`:
+    draftGPS?'Coastal area: unmapped. DYP defaults to the marine model until you choose a station.':'Use GPS to discover reporting DMI water stations.';
+  select.replaceChildren();
+  const empty=document.createElement('option');empty.value='';empty.textContent='Select a reporting station…';select.append(empty);
+  for(const c of waterStationCandidates){
+    const item=document.createElement('option');item.value=c.stationId;
+    item.textContent=`${c.coastalMatch?'◈ ':''}${c.stationName} · ${c.distance.toFixed(1)} km · ${c.value.toFixed(1)}°C`;
+    select.append(item);
+  }
+  // Do not choose a station merely because it ranks first.
+  if(pref&&waterStationCandidates.some(c=>c.stationId===pref))select.value=pref;
+  else select.value='';
+  select.disabled=!waterStationCandidates.length;
+  $('save-station-btn').disabled=!waterStationCandidates.length;
+  $('clear-station-btn').hidden=!pref;
+  group.hidden=!draftGPS;
+  status.textContent=waterStationCandidates.length?
+    `${waterStationCandidates.length} station${waterStationCandidates.length===1?'':'s'} reporting water temperature (within ${WATER_STATION_SEARCH_KM} km). ◈ = provisional same-coast candidate. Stations without recent observations are not listed.`:
+    (candidateLookupStatus||'No recent DMI water-temperature observations were returned.');
+  if(pref&&!waterStationCandidates.some(c=>c.stationId===pref))status.textContent+=` Saved station ${pref} is currently not reporting here.`;
+}
+function applyChosenStation(candidate,rule){
+  if(!candidate)return false;
+  const reading=waterReading(candidate,{rule,area:coastalAreaFor(draftGPS),reason:'User-selected reporting DMI station; coastal suitability chosen by user.'},new Date().toISOString());
+  if(applyAutoField('field-water',reading.value,reading.meta)){renderMeasurementSources();autoSaveDraft();return true;}
+  return false;
+}
+function saveChosenStation(){
+  const candidate=waterStationCandidates.find(c=>c.stationId===$('field-water-station').value);
+  if(!candidate){showToast('Choose a station from the list first');return;}
+  if(!setPreferredStation(candidate)){showToast('Enter a bathing spot name or use GPS first');return;}
+  $('field-water-mode').value='station-first';
+  if(isAutoMeasurement(draftMeasurements.waterTemperatureC)){$('field-water').value='';delete draftMeasurements.waterTemperatureC;}
+  const applied=applyChosenStation(candidate,'saved-station');
+  renderStationCandidates();renderMeasurementSources();autoSaveDraft();
+  showToast(applied?`Using ${candidate.stationName} for this spot`:'Station saved; your manually entered water temperature was kept');
+}
 function blankFormRecord() {
-  return {waterSourceMode:'local-first',startedAt:new Date().toISOString(),durationSeconds:0,waterTemperatureC:null,
+  return {waterSourceMode:'coastal-first',startedAt:new Date().toISOString(),durationSeconds:0,waterTemperatureC:null,
     location:{name:'',latitude:null,longitude:null,accuracyMeters:null},
     weather:{airTemperatureC:null,windSpeedMs:null,windDirection:'',condition:''},measurements:{},notes:'',source:'manual'};
 }
 function loadDraft() {return safeJSON(localStorage.getItem(DRAFT_KEY));}
 function setFormFromRecord(s){
   $('field-datetime').value=formatLocalInput(s.startedAt);
+  syncDatetimeDisplay();
   $('field-minutes').value=Math.floor((s.durationSeconds||0)/60);
   $('field-seconds').value=Math.round((s.durationSeconds||0)%60);
   $('field-water').value=s.waterTemperatureC??'';
-  $('field-water-mode').value=WATER_SOURCE_MODES.includes(s.waterSourceMode)?s.waterSourceMode:'local-first';
+  $('field-water-mode').value=WATER_SOURCE_MODES.includes(s.waterSourceMode)?s.waterSourceMode:'coastal-first';
   $('field-place').value=s.location?.name??'';
   $('field-air').value=s.weather?.airTemperatureC??'';
   $('field-wind').value=s.weather?.windSpeedMs??'';
@@ -252,7 +378,9 @@ function setFormFromRecord(s){
   draftMeasurements=structuredClone(s.measurements || {});
   draftGPS=s.location?.latitude!=null&&s.location?.longitude!=null ?
     {latitude:s.location.latitude,longitude:s.location.longitude,accuracyMeters:s.location.accuracyMeters??null}:null;
+  waterStationCandidates=[];candidateLookupStatus='';
   renderGPS();
+  renderStationCandidates();
   renderMeasurementSources();
   setLookupFeedback('Tap Use GPS to fetch DMI observations (where available) and labelled estimates, or enter data manually.');
 }
@@ -354,7 +482,7 @@ const CONDITION_FIELDS = {'field-water':'waterTemperatureC','field-air':'airTemp
   'field-wind':'windSpeedMs','field-direction':'windDirection','field-weather':'condition'};
 const DMI_ROOT = 'https://opendataapi.dmi.dk/v2';
 const DMI_PARAMETERS = [
-  ['oceanObs','tw','field-water',45], // Search 45 km for *diagnostics*; accept water only within a conservative 8 km.
+  ['oceanObs','tw','field-water',WATER_STATION_SEARCH_KM], // Discovery is broad; acceptance is based on saved choice/coastal candidate, not distance.
   ['metObs','temp_dry','field-air',35],
   ['metObs','wind_speed','field-wind',35],
   ['metObs','wind_dir','field-direction',35]
@@ -380,8 +508,8 @@ function renderMeasurementSources(){
   const water=draftMeasurements.waterTemperatureC,air=draftMeasurements.airTemperatureC,
     wind=draftMeasurements.windSpeedMs,dir=draftMeasurements.windDirection,weather=draftMeasurements.condition;
   $('water-source').textContent=isAutoMeasurement(water)
-    ? `${fmtSource(water)}. ${water.origin==='dmi'?(Number.isFinite(water.stationDistanceKm)&&water.stationDistanceKm>MAX_LOCAL_WATER_STATION_KM?'Older saved DMI reading: exceeds the new 8 km limit; refresh to use the current rule.':'Nearby harbour/coastal reading; same water body is not verified.'):'Modelled sea surface, not a bathing-spot measurement.'}`
-    : $('field-water').value.trim()?'Manually entered water temperature':'Enter a measurement, or use GPS for a nearby DMI observation / modelled sea-surface temperature.';
+    ? `${fmtSource(water)}. ${water.origin==='dmi'?(water.waterSelectionNote||'DMI station measurement; not an exact bathing-water temperature.'):'Modelled sea surface, not a bathing-spot measurement.'}`
+    : $('field-water').value.trim()?'Manually entered water temperature':'Enter a measurement or use GPS for coastal-aware DMI / marine-model data.';
   $('air-source').textContent=isAutoMeasurement(air)
     ? `${fmtSource(air)}. Editable.`
     : $('field-air').value.trim()?'Manually entered air temperature':'Air temperature can be auto-filled from DMI or a model estimate.';
@@ -498,57 +626,62 @@ function nearestDmiObservation(data,latitude,longitude,targetMs,maxDistanceKm,ma
   return best;
 }
 
-function coastalWaterAreaHint(coord){
-  // Only a contextual label for the Ordrup Strand bathing locality: not an official basin polygon.
-  if(haversineKm(coord.latitude,coord.longitude,55.8311,11.3950)<=3.5)return 'Ordrup Strand · Sejerø Bugt';
-  return '';
-}
-function waterStationDecision(chosen,coord,mode){
-  const coastalArea=coastalWaterAreaHint(coord);
-  if(mode==='marine-first')return {accepted:false,reason:'Marine model selected',coastalArea};
-  if(!chosen)return {accepted:false,reason:'No recent DMI water reading within 45 km',coastalArea};
-  if(chosen.distance>MAX_LOCAL_WATER_STATION_KM){
-    return {accepted:false,reason:`DMI ${chosen.stationName} (${chosen.distance.toFixed(1)} km) skipped: farther than ${MAX_LOCAL_WATER_STATION_KM} km from your bathing position`,coastalArea};
+function dmiWaterCandidates(data,coord,targetMs,stations){
+  const byStation=new Map();
+  for(const f of data?.features||[]){
+    const p=f?.properties,xy=f?.geometry?.coordinates;
+    if(!p||!Array.isArray(xy)||xy.length<2||!p.stationId||p.value==null||p.value==='')continue;
+    const value=Number(p.value),time=Date.parse(p.observed),lon=Number(xy[0]),lat=Number(xy[1]);
+    if(!Number.isFinite(value)||value < -3||value > 35||!Number.isFinite(time)||!Number.isFinite(lat)||!Number.isFinite(lon))continue;
+    const lag=Math.abs(time-targetMs),distance=haversineKm(coord.latitude,coord.longitude,lat,lon);
+    if(lag>75*60000||distance>WATER_STATION_SEARCH_KM)continue;
+    // Do not silently accept quality-control failures.
+    if(p.qcResult!==undefined&&p.qcResult!==null&&p.qcResult!==''&&Number(p.qcResult)>=1)continue;
+    const stationId=String(p.stationId),old=byStation.get(stationId);
+    if(!old||lag<old.lag)byStation.set(stationId,{stationId,stationName:stations?.get(stationId)||`Station ${stationId}`,
+      value,time:new Date(time).toISOString(),distance,lag,latitude:lat,longitude:lon});
   }
-  return {accepted:true,reason:`DMI ${chosen.stationName} is nearby (${chosen.distance.toFixed(1)} km); shared coastal water body is not independently verified`,coastalArea};
+  return rankWaterStations([...byStation.values()],coord,preferredStationId(coord));
 }
-
-async function fetchDmiConditions(coord,date,waterMode='local-first'){
+async function fetchDmiConditions(coord,date,waterMode='coastal-first'){
   const target=date.getTime();
   const start=new Date(target-75*60000).toISOString(),end=new Date(Math.min(Date.now(),target+75*60000)).toISOString();
-  const stationsBoxes={oceanObs:dmiBBox(coord.latitude,coord.longitude,50),metObs:dmiBBox(coord.latitude,coord.longitude,40)};
-  // A single observation endpoint request per parameter, plus a small station metadata lookup for names.
+  const boxes={oceanObs:dmiBBox(coord.latitude,coord.longitude,WATER_STATION_SEARCH_KM),metObs:dmiBBox(coord.latitude,coord.longitude,40)};
   const items=DMI_PARAMETERS.map(([group,param,id,maxKm])=>({group,param,id,maxKm,
-    url:dmiUrl(group,'observation',{parameterId:param,bbox:stationsBoxes[group],datetime:`${start}/${end}`,limit:'2500'})}));
+    url:dmiUrl(group,'observation',{parameterId:param,bbox:boxes[group],datetime:`${start}/${end}`,limit:group==='oceanObs'?'5000':'2500'})}));
   const requests=[...items.map(q=>requestModelData(q.url)),
-    requestModelData(dmiUrl('oceanObs','station',{bbox:stationsBoxes.oceanObs,limit:'1000'})),
-    requestModelData(dmiUrl('metObs','station',{bbox:stationsBoxes.metObs,limit:'1000'}))];
+    requestModelData(dmiUrl('oceanObs','station',{bbox:boxes.oceanObs,limit:'1500'})),
+    requestModelData(dmiUrl('metObs','station',{bbox:boxes.metObs,limit:'1000'}))];
   const results=await Promise.allSettled(requests);
   const names={oceanObs:dmiStationNames(results[4].status==='fulfilled'?results[4].value:null,date),
     metObs:dmiStationNames(results[5].status==='fulfilled'?results[5].value:null,date)};
   const outputs={},retrievedAt=new Date().toISOString();
   for(let i=0;i<items.length;i++){
-    const q=items[i],r=results[i];
-    if(r.status!=='fulfilled'){
-      outputs[q.id]={error:'unavailable',...(q.id==='field-water'?{waterDecision:{accepted:false,reason:'DMI water request failed',coastalArea:coastalWaterAreaHint(coord)}}:{})};
+    const q=items[i],result=results[i];
+    if(q.id==='field-water'){
+      if(result.status!=='fulfilled'){
+        outputs[q.id]={error:'unavailable',waterDecision:{reason:'DMI water observation API unavailable; using marine model.',rule:'dmi-unavailable',area:coastalAreaFor(coord)},candidates:[]};
+        continue;
+      }
+      const candidates=dmiWaterCandidates(result.value,coord,target,names.oceanObs);
+      const decision=chooseWaterStation(candidates,coord,waterMode,preferredStationId(coord));
+      outputs[q.id]={...(decision.candidate?waterReading(decision.candidate,decision,retrievedAt):{error:'no-coastal-match'}),
+        waterDecision:decision,candidates};
+      if(result.value?.links?.some(link=>link.rel==='next')){
+        outputs[q.id].waterDecision={...decision,reason:decision.reason+' DMI returned paginated results; station list may be incomplete.'};
+      }
       continue;
     }
-    // Reject obviously invalid temperatures BEFORE selecting the nearest station.
-    const candidates={features:(r.value?.features||[]).filter(feature=>{
-      const n=Number(feature?.properties?.value);
-      if(feature?.properties?.value==null||feature?.properties?.value==='')return false;
-      return q.id==='field-water'?n>=-3&&n<=35:
-        q.id==='field-air'?n>=-50&&n<=55:
-        q.id==='field-wind'?n>=0&&n<=70:n>=0&&n<=360;
+    if(result.status!=='fulfilled'){outputs[q.id]={error:'unavailable'};continue;}
+    const valid={features:(result.value?.features||[]).filter(f=>{
+      const v=f?.properties?.value,n=Number(v);
+      if(v==null||v==='')return false;
+      return q.id==='field-air'?n>=-50&&n<=55:q.id==='field-wind'?n>=0&&n<=70:n>=0&&n<=360;
     })};
-    const chosen=nearestDmiObservation(candidates,coord.latitude,coord.longitude,target,q.maxKm,75*60000,names[q.group]);
-    const waterDecision=q.id==='field-water'?waterStationDecision(chosen,coord,waterMode):null;
-    if(waterDecision&&!waterDecision.accepted){outputs[q.id]={error:'coastal-screen',waterDecision};continue;}
+    const chosen=nearestDmiObservation(valid,coord.latitude,coord.longitude,target,q.maxKm,75*60000,names[q.group]);
     outputs[q.id]=chosen?{value:q.id==='field-direction'?degToCompass(chosen.value):chosen.value,
       meta:{origin:'dmi',provider:'DMI Open Data',stationId:chosen.stationId,stationName:chosen.stationName,
-      stationDistanceKm:Math.round(chosen.distance*10)/10,observedAt:chosen.time,retrievedAt,
-      ...(waterDecision?{selectionRule:'local-coastal-8km',coastalArea:waterDecision.coastalArea}:{}),
-      }}:{error:'no-nearby-observation'};
+        stationDistanceKm:Math.round(chosen.distance*10)/10,observedAt:chosen.time,retrievedAt}}:{error:'no-nearby-observation'};
   }
   return outputs;
 }
@@ -582,29 +715,28 @@ async function fetchConditions(){
   let date;
   try{date=currentLookupDate();}catch(e){setLookupFeedback(e.message,'error');return;}
   if(!navigator.onLine){setLookupFeedback('You are offline. Conditions require internet; manual logging still works.','error');return;}
-  const serial=++conditionRequestSerial,coord={...draftGPS},savedDate=$('field-datetime').value;
+  const serial=++conditionRequestSerial,coord={...draftGPS},savedDate=$('field-datetime').value,savedPlace=$('field-place').value;
   $('refresh-conditions-btn').disabled=true;$('get-location-btn').disabled=true;
-  setLookupFeedback('Checking nearby DMI stations and weather estimates…','loading');
-  // Get models in parallel: they provide sky descriptions and fallback data only.
+  setLookupFeedback('Checking DMI water stations, coastal suitability and marine estimates…','loading');
   const useDmi=isDenmark(coord.latitude,coord.longitude);
   const [dmiResult,modelResult]=await Promise.allSettled([
     useDmi?fetchDmiConditions(coord,date,$('field-water-mode').value):Promise.resolve({}),fetchOpenMeteo(coord,date)]);
-  if(serial!==conditionRequestSerial||!draftGPS||draftGPS.latitude!==coord.latitude||draftGPS.longitude!==coord.longitude||$('field-datetime').value!==savedDate){
+  if(serial!==conditionRequestSerial||!draftGPS||draftGPS.latitude!==coord.latitude||draftGPS.longitude!==coord.longitude||$('field-datetime').value!==savedDate||$('field-place').value!==savedPlace){
     $('get-location-btn').disabled=false;$('refresh-conditions-btn').disabled=false;return;
   }
   $('get-location-btn').disabled=false;$('refresh-conditions-btn').disabled=false;
   const dmi=dmiResult.status==='fulfilled'?dmiResult.value:{},models=modelResult.status==='fulfilled'?modelResult.value:{};
   const waterDecision=dmi['field-water']?.waterDecision;
-  // Store why a remote harbour measurement was rejected with the selected marine estimate.
-  // The refusal is still shown when no marine value is available, and the field remains blank.
-  if(waterDecision&&!waterDecision.accepted&&models['field-water']?.meta){
+  waterStationCandidates=rankWaterStations(dmi['field-water']?.candidates||[],coord,preferredStationId(coord));
+  candidateLookupStatus=useDmi?(dmiResult.status==='rejected'||dmi['field-water']?.error==='unavailable'?'DMI was unavailable. Try again online.':'No recent DMI water temperature observations returned.'):'Outside Denmark: DMI skipped.';
+  renderStationCandidates();
+  if(waterDecision&&!waterDecision.candidate&&models['field-water']?.meta){
     models['field-water'].meta.waterSelectionNote=waterDecision.reason;
-    if(waterDecision.coastalArea)models['field-water'].meta.coastalArea=waterDecision.coastalArea;
-    models['field-water'].meta.selectionRule='local-coastal-8km';
+    models['field-water'].meta.coastalArea=waterDecision.area?.label||'';
+    models['field-water'].meta.selectionRule=waterDecision.rule;
   }
   let stationCount=0,modelCount=0,manualCount=0,missingCount=0;
   for(const id of Object.keys(CONDITION_FIELDS)){
-    // DMI for station-measured water, air, wind. Sky condition remains an Open-Meteo estimate.
     const reading=dmi[id]?.value!==undefined?dmi[id]:models[id];
     const previous=$(id).value;
     if(reading&&applyAutoField(id,reading.value,reading.meta)){
@@ -619,8 +751,7 @@ async function fetchConditions(){
   if(manualCount)parts.push(`${manualCount} manual ${manualCount===1?'entry':'entries'} kept`);
   if(missingCount)parts.push(`${missingCount} field${missingCount===1?'':'s'} unavailable`);
   if(useDmi&&(dmiResult.status==='rejected'||Object.values(dmi).some(v=>v?.error==='unavailable')))parts.push('Some DMI requests failed or were blocked');
-  if(!useDmi)parts.push('Outside Denmark — DMI skipped');
-  if(waterDecision&&!waterDecision.accepted)parts.push(waterDecision.reason);
+  if(waterDecision&&!waterDecision.candidate)parts.push(waterDecision.reason);
   if(!models['field-water']?.value&&!dmi['field-water']?.value&&!$('field-water').value.trim())parts.push('Water temperature unavailable; enter manually');
   if(!stationCount&&useDmi&&dmiResult.status==='fulfilled')parts.push('No accepted DMI measurements');
   if(modelResult.status==='rejected')parts.push('Open-Meteo unavailable');
@@ -635,7 +766,7 @@ function locate(){
   navigator.geolocation.getCurrentPosition(pos=>{
     clearModelledFields();
     draftGPS={latitude:pos.coords.latitude,longitude:pos.coords.longitude,accuracyMeters:pos.coords.accuracy};
-    renderGPS();autoSaveDraft();
+    waterStationCandidates=[];candidateLookupStatus='';renderGPS();renderStationCandidates();autoSaveDraft();
     fetchConditions();
   },err=>{
     $('get-location-btn').disabled=false;renderGPS();
@@ -643,7 +774,7 @@ function locate(){
   },{enableHighAccuracy:true,timeout:15000,maximumAge:60000});
 }
 
-const CSV_HEADERS=['id','started_at_utc','date_local','time_local','time_zone','duration_seconds','water_temperature_c','location_name','latitude','longitude','gps_accuracy_m','air_temperature_c','wind_speed_m_s','wind_direction','weather_condition','notes','source','created_at_utc','updated_at_utc','water_temperature_origin','water_model_time_utc','water_grid_distance_km','air_temperature_origin','air_model_time_utc','conditions_retrieved_at_utc','water_station_id','water_station_name','water_station_distance_km','water_observed_at_utc','air_station_id','air_station_name','air_station_distance_km','air_observed_at_utc','wind_speed_origin','wind_speed_station_id','wind_speed_station_name','wind_speed_station_distance_km','wind_speed_observed_at_utc','wind_direction_origin','weather_condition_origin','water_source_preference','water_selection_rule','water_area_hint','water_selection_note'];
+const CSV_HEADERS=['id','started_at_utc','date_local','time_local','time_zone','duration_seconds','water_temperature_c','location_name','latitude','longitude','gps_accuracy_m','air_temperature_c','wind_speed_m_s','wind_direction','weather_condition','notes','source','created_at_utc','updated_at_utc','water_temperature_origin','water_model_time_utc','water_grid_distance_km','air_temperature_origin','air_model_time_utc','conditions_retrieved_at_utc','water_station_id','water_station_name','water_station_distance_km','water_observed_at_utc','air_station_id','air_station_name','air_station_distance_km','air_observed_at_utc','wind_speed_origin','wind_speed_station_id','wind_speed_station_name','wind_speed_station_distance_km','wind_speed_observed_at_utc','wind_direction_origin','weather_condition_origin','water_source_preference','water_selection_rule','water_area_hint','water_selection_note','water_coastal_match'];
 function csvCell(v,asText=false){
   if(v===null||v===undefined)return '';
   let s=String(v);
@@ -669,7 +800,7 @@ function localDateTimeParts(iso, timeZone){
 function makeCSV(rows){
   const records=rows.map(s=>{
     const [day,time]=localDateTimeParts(s.startedAt,s.timeZone);
-    return [s.id,s.startedAt,day,time,s.timeZone,s.durationSeconds,s.waterTemperatureC,s.location?.name,s.location?.latitude,s.location?.longitude,s.location?.accuracyMeters,s.weather?.airTemperatureC,s.weather?.windSpeedMs,s.weather?.windDirection,s.weather?.condition,s.notes,s.source,s.createdAt,s.updatedAt,s.waterTemperatureC!=null?(s.measurements?.waterTemperatureC?.origin||'manual'):'',s.measurements?.waterTemperatureC?.modelTime??'',s.measurements?.waterTemperatureC?.gridDistanceKm??'',s.weather?.airTemperatureC!=null?(s.measurements?.airTemperatureC?.origin||'manual'):'',s.measurements?.airTemperatureC?.modelTime??'',s.measurements?.airTemperatureC?.retrievedAt??s.measurements?.waterTemperatureC?.retrievedAt??'',s.measurements?.waterTemperatureC?.stationId??'',s.measurements?.waterTemperatureC?.stationName??'',s.measurements?.waterTemperatureC?.stationDistanceKm??'',s.measurements?.waterTemperatureC?.observedAt??'',s.measurements?.airTemperatureC?.stationId??'',s.measurements?.airTemperatureC?.stationName??'',s.measurements?.airTemperatureC?.stationDistanceKm??'',s.measurements?.airTemperatureC?.observedAt??'',s.weather?.windSpeedMs!=null?(s.measurements?.windSpeedMs?.origin||'manual'):'',s.measurements?.windSpeedMs?.stationId??'',s.measurements?.windSpeedMs?.stationName??'',s.measurements?.windSpeedMs?.stationDistanceKm??'',s.measurements?.windSpeedMs?.observedAt??'',s.weather?.windDirection?(s.measurements?.windDirection?.origin||'manual'):'',s.weather?.condition?(s.measurements?.condition?.origin||'manual'):'',s.waterSourceMode||'local-first',s.measurements?.waterTemperatureC?.selectionRule??'',s.measurements?.waterTemperatureC?.coastalArea??'',s.measurements?.waterTemperatureC?.waterSelectionNote??''];
+    return [s.id,s.startedAt,day,time,s.timeZone,s.durationSeconds,s.waterTemperatureC,s.location?.name,s.location?.latitude,s.location?.longitude,s.location?.accuracyMeters,s.weather?.airTemperatureC,s.weather?.windSpeedMs,s.weather?.windDirection,s.weather?.condition,s.notes,s.source,s.createdAt,s.updatedAt,s.waterTemperatureC!=null?(s.measurements?.waterTemperatureC?.origin||'manual'):'',s.measurements?.waterTemperatureC?.modelTime??'',s.measurements?.waterTemperatureC?.gridDistanceKm??'',s.weather?.airTemperatureC!=null?(s.measurements?.airTemperatureC?.origin||'manual'):'',s.measurements?.airTemperatureC?.modelTime??'',s.measurements?.airTemperatureC?.retrievedAt??s.measurements?.waterTemperatureC?.retrievedAt??'',s.measurements?.waterTemperatureC?.stationId??'',s.measurements?.waterTemperatureC?.stationName??'',s.measurements?.waterTemperatureC?.stationDistanceKm??'',s.measurements?.waterTemperatureC?.observedAt??'',s.measurements?.airTemperatureC?.stationId??'',s.measurements?.airTemperatureC?.stationName??'',s.measurements?.airTemperatureC?.stationDistanceKm??'',s.measurements?.airTemperatureC?.observedAt??'',s.weather?.windSpeedMs!=null?(s.measurements?.windSpeedMs?.origin||'manual'):'',s.measurements?.windSpeedMs?.stationId??'',s.measurements?.windSpeedMs?.stationName??'',s.measurements?.windSpeedMs?.stationDistanceKm??'',s.measurements?.windSpeedMs?.observedAt??'',s.weather?.windDirection?(s.measurements?.windDirection?.origin||'manual'):'',s.weather?.condition?(s.measurements?.condition?.origin||'manual'):'',s.waterSourceMode||'coastal-first',s.measurements?.waterTemperatureC?.selectionRule??'',s.measurements?.waterTemperatureC?.coastalArea??'',s.measurements?.waterTemperatureC?.waterSelectionNote??'',s.measurements?.waterTemperatureC?.coastalMatch??''];
   });
   return '\uFEFF'+[CSV_HEADERS.join(','),...records.map(r=>r.map((v,i)=>csvCell(v,[0,7,13,14,15,16].includes(i))).join(','))].join('\r\n')+'\r\n';
 }
@@ -681,7 +812,7 @@ function downloadText(content,type,filename){
 function todayName(){return formatLocalInput().slice(0,10);}
 function exportCSV(){downloadText(makeCSV(sessions),'text/csv;charset=utf-8',`dyp-sessions-${todayName()}.csv`);showToast(`Exported ${sessions.length} sessions as CSV`);}
 function exportJSON(){
-  const backup={format:'dyp-backup',schemaVersion:1,exportedAt:new Date().toISOString(),sessions};
+  const backup={format:'dyp-backup',schemaVersion:1,exportedAt:new Date().toISOString(),sessions,waterStationPreferences:loadStationPreferences()};
   downloadText(JSON.stringify(backup,null,2),'application/json;charset=utf-8',`dyp-backup-${todayName()}.json`);
   showToast(`Backed up ${sessions.length} sessions`);
 }
@@ -699,6 +830,7 @@ function sanitizeMeasurements(input){
         gridDistanceKm:Number.isFinite(m.gridDistanceKm)&&m.gridDistanceKm>=0&&m.gridDistanceKm<10000?m.gridDistanceKm:null,
         ...(key==='waterTemperatureC'?{selectionRule:typeof m.selectionRule==='string'?m.selectionRule.slice(0,60):'',
           coastalArea:typeof m.coastalArea==='string'?m.coastalArea.slice(0,120):'',
+          coastalMatch:Boolean(m.coastalMatch),
           waterSelectionNote:typeof m.waterSelectionNote==='string'?m.waterSelectionNote.slice(0,240):''}:{}),
         };
     }else if(m?.origin==='dmi' && key!=='condition'){
@@ -708,7 +840,8 @@ function sanitizeMeasurements(input){
         stationId:m.stationId,stationName:typeof m.stationName==='string'?m.stationName.slice(0,150):'',
         stationDistanceKm:Number.isFinite(m.stationDistanceKm)&&m.stationDistanceKm>=0&&m.stationDistanceKm<200?m.stationDistanceKm:null,
         ...(key==='waterTemperatureC'?{selectionRule:typeof m.selectionRule==='string'?m.selectionRule.slice(0,60):'',
-        coastalArea:typeof m.coastalArea==='string'?m.coastalArea.slice(0,120):''}:{}),};
+        coastalArea:typeof m.coastalArea==='string'?m.coastalArea.slice(0,120):'',
+        coastalMatch:Boolean(m.coastalMatch),waterSelectionNote:typeof m.waterSelectionNote==='string'?m.waterSelectionNote.slice(0,240):''}:{}),};
     }
   }
   return out;
@@ -726,7 +859,7 @@ function validateImportedSession(s){
     waterTemperatureC:water,location:{name:typeof s.location?.name==='string'?s.location.name.slice(0,120):'',latitude:lat,longitude:lon,accuracyMeters:accuracy},
     weather:{airTemperatureC:air,windSpeedMs:wind,windDirection:DIRECTION_VALUES.includes(s.weather?.windDirection)?s.weather.windDirection:'',condition:WEATHER_VALUES.includes(s.weather?.condition)?s.weather.condition:''},
     notes:typeof s.notes==='string'?s.notes.slice(0,2000):'',source:s.source==='stopwatch'?'stopwatch':'manual',
-    measurements:sanitizeMeasurements(s.measurements),waterSourceMode:WATER_SOURCE_MODES.includes(s.waterSourceMode)?s.waterSourceMode:'local-first',
+    measurements:sanitizeMeasurements(s.measurements),waterSourceMode:WATER_SOURCE_MODES.includes(s.waterSourceMode)?s.waterSourceMode:'coastal-first',
     createdAt:typeof s.createdAt==='string'&&!Number.isNaN(Date.parse(s.createdAt))?s.createdAt:new Date().toISOString(),
     updatedAt:typeof s.updatedAt==='string'&&!Number.isNaN(Date.parse(s.updatedAt))?s.updatedAt:new Date().toISOString(),
     timeZone:typeof s.timeZone==='string'?s.timeZone.slice(0,100):'local'};
@@ -746,9 +879,21 @@ async function importJSON(event){
     }
     const localIDs=new Set(sessions.map(s=>s.id));
     const newRecords=records.filter(s=>!localIDs.has(s.id));
-    if(!newRecords.length){showToast('No new sessions to import');return;}
-    if(!confirm(`Import ${newRecords.length} new dip${newRecords.length===1?'':'s'}? Existing sessions will not be changed.`))return;
-    await putImportedRecords(newRecords);await readSessions();renderHome();showToast(`Imported ${newRecords.length} sessions`);
+    const restoredPrefs={};
+    if(backup.waterStationPreferences&&typeof backup.waterStationPreferences==='object'&&!Array.isArray(backup.waterStationPreferences)){
+      for(const [key,pref] of Object.entries(backup.waterStationPreferences).slice(0,1000)){
+        if(typeof key==='string'&&key.length<=120&&(key.startsWith('place:')||key.startsWith('gps:'))&&
+          typeof pref?.stationId==='string'&&/^[a-z0-9_-]{1,35}$/i.test(pref.stationId)){
+          restoredPrefs[key]={stationId:pref.stationId,stationName:typeof pref.stationName==='string'?pref.stationName.slice(0,150):'',updatedAt:new Date().toISOString()};
+        }
+      }
+    }
+    const existingPrefs=loadStationPreferences(),newPrefs=Object.fromEntries(Object.entries(restoredPrefs).filter(([k])=>!(k in existingPrefs)));
+    if(!newRecords.length&&!Object.keys(newPrefs).length){showToast('Nothing new to import');return;}
+    if(!confirm(`Import ${newRecords.length} new dip${newRecords.length===1?'':'s'} and ${Object.keys(newPrefs).length} saved station preference${Object.keys(newPrefs).length===1?'':'s'}? Existing data will not be changed.`))return;
+    if(newRecords.length)await putImportedRecords(newRecords);
+    if(Object.keys(newPrefs).length)localStorage.setItem(WATER_STATION_PREF_KEY,JSON.stringify({...existingPrefs,...newPrefs}));
+    await readSessions();renderHome();showToast(`Imported ${newRecords.length} sessions and ${Object.keys(newPrefs).length} preferences`);
   }catch(e){showToast('Import failed: '+e.message);}
 }
 async function renderStorageStatus(){
@@ -761,7 +906,7 @@ async function renderStorageStatus(){
 async function deleteEverything(){
   if(!sessions.length){showToast('No sessions to delete');return;}
   if(prompt(`Type DELETE to remove all ${sessions.length} locally stored dips. Export a backup first.`)!=='DELETE')return;
-  try{await clearSessions();await readSessions();renderStorageStatus();navigate('home');showToast('All local sessions deleted');}
+  try{await clearSessions();localStorage.removeItem(WATER_STATION_PREF_KEY);await readSessions();renderStorageStatus();navigate('home');showToast('All local sessions and saved stations deleted');}
   catch(e){showToast('Could not clear data: '+e.message);}
 }
 
@@ -783,24 +928,38 @@ function registerEvents(){
   $('cancel-log-btn').addEventListener('click',cancelLog);
   $('get-location-btn').addEventListener('click',locate);
   $('refresh-conditions-btn').addEventListener('click',fetchConditions);
+  $('save-station-btn').addEventListener('click',saveChosenStation);
+  $('clear-station-btn').addEventListener('click',()=>{
+    if(!forgetPreferredStation())return;
+    $('field-water-mode').value='coastal-first';
+    // No silently stale old station measurement after removing the remembered choice.
+    if(isAutoMeasurement(draftMeasurements.waterTemperatureC)){$('field-water').value='';delete draftMeasurements.waterTemperatureC;}
+    renderStationCandidates();renderMeasurementSources();autoSaveDraft();
+    setLookupFeedback('Saved station cleared. Refresh to apply coastal-aware automatic selection.');
+  });
+  $('field-place').addEventListener('change',()=>{
+    waterStationCandidates=rankWaterStations(waterStationCandidates,draftGPS,preferredStationId());
+    renderStationCandidates();
+  });
   $('field-water-mode').addEventListener('change',()=>{
     ++conditionRequestSerial;
     // An old *auto-filled* water temperature must not remain under a new selection policy.
     if(isAutoMeasurement(draftMeasurements.waterTemperatureC)){
       $('field-water').value='';delete draftMeasurements.waterTemperatureC;
     }
-    renderMeasurementSources();
+    renderStationCandidates();renderMeasurementSources();
     setLookupFeedback('Water source preference updated. Tap Refresh conditions for a new reading; manual water entries remain unchanged.');
     autoSaveDraft();
   });
-  $('clear-location-btn').addEventListener('click',()=>{++conditionRequestSerial;draftGPS=null;clearModelledFields();renderGPS();setLookupFeedback('GPS cleared; previous model estimates removed. Manual entries were kept.');autoSaveDraft();});
+  $('clear-location-btn').addEventListener('click',()=>{++conditionRequestSerial;draftGPS=null;waterStationCandidates=[];candidateLookupStatus='';clearModelledFields();renderGPS();renderStationCandidates();setLookupFeedback('GPS cleared; previous model estimates removed. Manual entries were kept.');autoSaveDraft();});
   for(const id of Object.keys(CONDITION_FIELDS)){
     $(id).addEventListener('input',noteManualFieldChange);
     $(id).addEventListener('change',noteManualFieldChange);
   }
   $('session-form').addEventListener('input',autoSaveDraft);
   $('session-form').addEventListener('change',autoSaveDraft);
-  $('field-datetime').addEventListener('change',()=>{++conditionRequestSerial;clearModelledFields();setLookupFeedback('Session time changed; old estimates removed. Tap Refresh conditions to fetch for the new time.');autoSaveDraft();});
+  $('field-datetime').addEventListener('input',syncDatetimeDisplay);
+  $('field-datetime').addEventListener('change',()=>{syncDatetimeDisplay();++conditionRequestSerial;clearModelledFields();setLookupFeedback('Session time changed; old estimates removed. Tap Refresh conditions to fetch for the new time.');autoSaveDraft();});
   $('history-search').addEventListener('input',renderHistory);
   $('history-filter').addEventListener('change',renderHistory);
   for(const id of ['recent-list','history-list']) $(id).addEventListener('click',ev=>{
