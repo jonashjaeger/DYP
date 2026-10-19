@@ -134,3 +134,38 @@ DMI documentation:
 - https://www.dmi.dk/friedata/dokumentation/apis/oceanographic-observation-and-tidewater-api
 - https://www.dmi.dk/friedata/dokumentation/meteorological-observation-api
 - https://www.dmi.dk/friedata/dokumentation/authentication
+
+
+## Water temperature selection: v1.3 (coastal proximity protection)
+
+- **IMPORTANT: no full marine-basin mapping.** Distance alone cannot prove a gauge
+  shares a bay, fjord or water body with a beach. For safety against misattributing
+  distant harbour readings, DYP only uses the nearest *recent* DMI water observation
+  when the station is **at most 8 km** from the bathing GPS position. It still uses
+  the 45 km DMI search to explain why a more distant reading was rejected.
+- If no DMI water observation qualifies, DYP uses an Open-Meteo Marine *model estimate*
+  **requested for the user's GPS point** (subject to wet-grid and a strict 12 km model-cell distance limit).
+  If no marine estimate is returned, the water field is left empty, never filled
+  with an unsuitable harbour measurement. DMI air and wind observations retain
+  their existing 35 km limits.
+- Near **Ordrup Strand**, this specifically rejects approximately 23 km-distant
+  **Holbæk Havn**, rather than treating its Holbæk Fjord reading as Sejerø Bugt water.
+  A contextual Ordrup/Sejerø Bugt label is included in model provenance; it is
+  *not* a hydrological polygon or automated same-water-body determination.
+- Users can choose **Marine model first (no harbour readings)** for any session,
+  useful for locations around promontories where even nearby stations sample a
+  different water body. This preference is stored per session, including in JSON
+  backups; older sessions default to 'local-first'.
+- **Manual water measurements are never overwritten.** Changing the source
+  preference clears only the *previously auto-filled* water value until refreshed.
+- CSV exports include water source preference, selection rule, optional area hint,
+  and explanatory rejection note. Imported older JSON backups remain compatible.
+  Previously saved readings are not silently changed, but distant legacy DMI
+  readings are flagged in the editor.
+- GitHub update: replace **index.html, app.js, sw.js** in the repository root.
+  Existing storage is preserved; back up JSON first and reload online (twice if needed).
+
+The marine model is an estimate, not a thermometer reading. Neither model data nor
+DMI gauges should be used as a safety threshold for cold-water immersion.
+
+The Open-Meteo Marine response must identify its actual selected sea grid cell within 12 km. It may still represent different near-coast conditions; DYP never claims this is measured surface temperature.
