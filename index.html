@@ -12,7 +12,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=1.0.1">
   <title>DYP — Winter bathing journal</title>
   <script src="./app.js" defer></script>
 </head>
@@ -95,7 +95,7 @@
         <form id="session-form" novalidate>
           <div class="form-card">
             <div class="form-card-heading"><span class="step-number">01</span><h2>The dip</h2></div>
-            <label class="field"><span>Date &amp; time <b>*</b></span><input id="field-datetime" name="datetime" type="datetime-local" required></label>
+            <label class="field datetime-field"><span>Date &amp; time <b>*</b></span><input id="field-datetime" name="datetime" type="datetime-local" required></label>
             <div class="field"><span class="field-label">Duration <b>*</b></span><div class="two-col time-columns"><label><span>Minutes</span><input id="field-minutes" type="number" min="0" max="1440" step="1" inputmode="numeric" required value="0"></label><label><span>Seconds</span><input id="field-seconds" type="number" min="0" max="59" step="1" inputmode="numeric" required value="0"></label></div></div>
             <label class="field"><span>Water temperature <small>°C</small></span><div class="input-with-unit"><input id="field-water" type="number" min="-5" max="45" step="0.1" inputmode="decimal" placeholder="e.g. 6.5"><span>°C</span></div></label>
           </div>
@@ -149,7 +149,7 @@
         <div class="setting-card"><h2>Privacy &amp; offline use</h2><p>Sessions are stored in your browser's on-device IndexedDB. GPS is optional and requested only when you tap the location button. Data may be lost if you clear website data or remove the app: keep regular JSON backups.</p><p id="storage-status" class="storage-status" role="status">Checking local storage…</p></div>
         <div class="setting-card"><h2>Install DYP</h2><p>On iPhone, open your hosted DYP website in <strong>Safari</strong>, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. Open the icon once while online so the offline cache is prepared.</p><p class="small-muted">The app must be hosted over HTTPS for offline support and GPS (GitHub Pages is suitable).</p></div>
         <div class="setting-card danger-zone"><h2>Delete all sessions</h2><p>Irreversibly erase the journal stored on this device. Export a backup first.</p><button id="delete-all-btn" class="outline-danger" type="button">Delete all local data</button></div>
-        <p class="app-version">DYP · Version 1.0 · Built for the sea, not the feed.</p>
+        <p class="app-version">DYP · Version 1.0.1 · Built for the sea, not the feed.</p>
       </section>
     </main>
     <nav class="bottom-nav" aria-label="Main navigation">

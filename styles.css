@@ -84,6 +84,11 @@ h1 em{color:#4d948b;font-family:Georgia,serif;font-weight:400;letter-spacing:-.0
 .field{display:flex;flex-direction:column;gap:8px;margin:0 0 17px;font-size:13px;font-weight:700;color:var(--ink)}.field:last-child{margin-bottom:0}
 .field>span:first-child,.field-label{font-weight:700}.field b{color:#4c9d90}
 .field small{font-size:11px;color:var(--muted);font-weight:500}
+/* iOS Safari gives datetime-local a large intrinsic control width.
+   Keep its flex/grid ancestors shrinkable and clip the native control to the card. */
+#session-form,.form-card,.field{min-width:0;max-width:100%}
+.datetime-field{width:100%;overflow:hidden}
+#field-datetime{display:block;width:100%;min-width:0;max-width:100%;overflow:hidden}
 input,select,textarea{border:1px solid #dae4e1;background:#fafcfb;color:var(--ink);border-radius:12px;padding:12px 13px;width:100%;min-height:48px;outline:none;min-width:0;font-size:16px}
 input:focus,select:focus,textarea:focus{border-color:#4baba0;box-shadow:0 0 0 3px rgba(75,171,160,.12)}
 textarea{resize:vertical;min-height:108px}
